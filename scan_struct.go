@@ -1,4 +1,4 @@
-package pgxHelpers
+package pgxhelpers
 
 import (
 	"errors"
