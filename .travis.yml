@@ -1,0 +1,13 @@
+language: go
+
+go:
+  - "1.9"
+  - "1.10"
+  - "1.11"
+  - "stable"
+
+install:
+  - go get -v -d
+  - go get -u golang.org/x/lint/golint
+
+script: make verify
