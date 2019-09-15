@@ -31,3 +31,33 @@ var result MyEntity
 row := conn.QueryRow("SELECT * FROM my_entity WHERE id = $1", someID)
 pgxHelpers.ScanStruct(row, &result)
 ```
+
+## Scan rows into structs list
+
+```go
+package main
+
+import (
+	"time"
+
+	"github.com/jackc/pgx"
+	pgxHelpers "github.com/vgarvardt/pgx-helpers"
+)
+
+type MyEntity struct {
+    ID        string    `db:"id"`
+    CreatedAt time.Time `db:"created_at"`
+    SomeData  string    `db:"some_data"`
+}
+
+conn, _ := pgx.Connect(pgx.ConnConfig{...})
+
+var results []*MyEntity
+rows, _ := conn.Query("SELECT * FROM my_entity WHERE id = $1", someID)
+defer rows.Close()
+pgxHelpers.ScanStructs(rows, func() interface{} {
+    return new(MyEntity)
+}, func(r interface{}) {
+    results = append(results, r.(*MyEntity))
+})
+```

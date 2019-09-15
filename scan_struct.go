@@ -22,11 +22,6 @@ func ScanStruct(r *pgx.Row, dest interface{}) error {
 		return errors.New("nil pointer passed to ScanStruct destination")
 	}
 
-	base := v.Type()
-	if base.Kind() == reflect.Ptr {
-		base = base.Elem()
-	}
-
 	fieldDescriptions := (*pgx.Rows)(r).FieldDescriptions()
 	columns := make([]string, len(fieldDescriptions), len(fieldDescriptions))
 	for i, fieldDescription := range fieldDescriptions {
@@ -50,8 +45,54 @@ func ScanStruct(r *pgx.Row, dest interface{}) error {
 	return r.Scan(values...)
 }
 
-func missingFields(transversals [][]int) (field int, err error) {
-	for i, t := range transversals {
+// ScanStructs scans a pgx.Rows into destination structs list passed by reference based on the "db" fields tags
+func ScanStructs(r *pgx.Rows, newDest func() interface{}, appendResult func(r interface{})) error {
+	dest := newDest()
+	v := reflect.ValueOf(dest)
+	if v.Kind() != reflect.Ptr {
+		return errors.New("must return a pointer to a new struct, not a value, to ScanStructs destination")
+	}
+	if v.IsNil() {
+		return errors.New("nil pointer passed to ScanStruct destination")
+	}
+
+	fieldDescriptions := r.FieldDescriptions()
+	columns := make([]string, len(fieldDescriptions), len(fieldDescriptions))
+	for i, fieldDescription := range fieldDescriptions {
+		columns[i] = fieldDescription.Name
+	}
+
+	fields := mapper.TraversalsByName(v.Type(), columns)
+
+	// if we are not unsafe and are missing fields, return an error
+	if f, err := missingFields(fields); err != nil {
+		return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
+	}
+
+	for r.Next() {
+		dest := newDest()
+		v = reflect.ValueOf(dest)
+
+		fields := mapper.TraversalsByName(v.Type(), columns)
+		values := make([]interface{}, len(columns))
+
+		err := fieldsByTraversal(v, fields, values)
+		if err != nil {
+			return err
+		}
+
+		if err := r.Scan(values...); err != nil {
+			return nil
+		}
+
+		appendResult(dest)
+	}
+
+	return r.Err()
+}
+
+func missingFields(traversals [][]int) (field int, err error) {
+	for i, t := range traversals {
 		if len(t) == 0 {
 			return i, errors.New("missing field")
 		}
