@@ -39,6 +39,11 @@ type testEntity struct {
 	SomeData  string    `db:"some_data"`
 }
 
+type testMissingField struct {
+	ID        string    `db:"id"`
+	CreatedAt time.Time `db:"created_at"`
+}
+
 func TestScanStruct(t *testing.T) {
 	conn, err := pgx.Connect(connConfig)
 	require.NoError(t, err)
@@ -60,6 +65,22 @@ func TestScanStruct(t *testing.T) {
 	assert.Equal(t, data1, result.SomeData)
 	// compare unit timestamp to avoid milliseconds diff
 	assert.Equal(t, time1.Unix(), result.CreatedAt.Unix())
+
+	// test some fail cases
+	err = ScanStruct(nil, result)
+	require.Error(t, err)
+	assert.Equal(t, "must pass a pointer, not a value, to ScanStruct destination", err.Error())
+
+	var isNil *testEntity
+	err = ScanStruct(nil, isNil)
+	require.Error(t, err)
+	assert.Equal(t, "nil pointer passed to ScanStruct destination", err.Error())
+
+	var resultMissingField testMissingField
+	row = conn.QueryRow("SELECT * FROM test WHERE id = $1", id1)
+	err = ScanStruct(row, &resultMissingField)
+	require.Error(t, err)
+	assert.Equal(t, "missing destination name some_data in *pgxhelpers.testMissingField", err.Error())
 }
 
 func TestScanStructs(t *testing.T) {
@@ -100,6 +121,33 @@ func TestScanStructs(t *testing.T) {
 	assert.Equal(t, data2, result[1].SomeData)
 	// compare unit timestamp to avoid milliseconds diff
 	assert.Equal(t, time2.Unix(), result[1].CreatedAt.Unix())
+
+	// test some fail cases
+	err = ScanStructs(nil, func() interface{} {
+		return testEntity{}
+	}, func(r interface{}) {
+	})
+	require.Error(t, err)
+	assert.Equal(t, "must return a pointer to a new struct, not a value, to ScanStructs destination", err.Error())
+
+	err = ScanStructs(nil, func() interface{} {
+		var isNil *testEntity
+		return isNil
+	}, func(r interface{}) {
+	})
+	require.Error(t, err)
+	assert.Equal(t, "nil pointer returned to ScanStructs destination", err.Error())
+
+	rows, err = conn.Query("SELECT * FROM test WHERE id IN ($1, $2) ORDER BY id ASC", id1, id2)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	err = ScanStructs(rows, func() interface{} {
+		return new(testMissingField)
+	}, func(r interface{}) {
+	})
+	require.Error(t, err)
+	assert.Equal(t, "missing destination name some_data in *pgxhelpers.testMissingField", err.Error())
 }
 
 func initDockerDeps() (*dockertest.Pool, []*dockertest.Resource) {

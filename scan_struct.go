@@ -53,7 +53,7 @@ func ScanStructs(r *pgx.Rows, newDest func() interface{}, appendResult func(r in
 		return errors.New("must return a pointer to a new struct, not a value, to ScanStructs destination")
 	}
 	if v.IsNil() {
-		return errors.New("nil pointer passed to ScanStruct destination")
+		return errors.New("nil pointer returned to ScanStructs destination")
 	}
 
 	fieldDescriptions := r.FieldDescriptions()
