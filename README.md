@@ -2,6 +2,11 @@
 
 Various helpers for [`jackc/pgx`](https://github.com/jackc/pgx) PostgreSQL driver for Go.
 
+## Versions
+
+- v3 is compatible with pgx 3.x+
+- v4 is compatible with pgx 4.x+
+
 ## Scan row into struct
 
 `ScanStruct(r *pgx.Row, dest interface{}) error`
