@@ -58,7 +58,8 @@ func TestScanStruct(t *testing.T) {
 
 	assert.Equal(t, id1, result.ID)
 	assert.Equal(t, data1, result.SomeData)
-	assert.True(t, time1.Equal(result.CreatedAt))
+	// compare unit timestamp to avoid milliseconds diff
+	assert.Equal(t, time1.Unix(), result.CreatedAt.Unix())
 }
 
 func TestScanStructs(t *testing.T) {
@@ -92,11 +93,13 @@ func TestScanStructs(t *testing.T) {
 
 	assert.Equal(t, id1, result[0].ID)
 	assert.Equal(t, data1, result[0].SomeData)
-	assert.True(t, time1.Equal(result[0].CreatedAt))
+	// compare unit timestamp to avoid milliseconds diff
+	assert.Equal(t, time1.Unix(), result[0].CreatedAt.Unix())
 
 	assert.Equal(t, id2, result[1].ID)
 	assert.Equal(t, data2, result[1].SomeData)
-	assert.True(t, time2.Equal(result[1].CreatedAt))
+	// compare unit timestamp to avoid milliseconds diff
+	assert.Equal(t, time2.Unix(), result[1].CreatedAt.Unix())
 }
 
 func initDockerDeps() (*dockertest.Pool, []*dockertest.Resource) {
