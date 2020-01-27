@@ -9,9 +9,9 @@ go:
   - "stable"
 
 install:
-  - go get -v -d
+  - go mod vendor
   - go get -u golang.org/x/lint/golint
-  - go get github.com/go-playground/overalls
+  - go get -u github.com/go-playground/overalls
 
 script:
   - make verify
