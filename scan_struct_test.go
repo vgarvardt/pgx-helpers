@@ -2,20 +2,20 @@ package pgxhelpers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx"
+	"github.com/jackc/pgx/v4"
 	"github.com/ory/dockertest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-var connConfig pgx.ConnConfig
+var connString string
 
 func TestMain(m *testing.M) {
 	pool, resources := initDockerDeps()
@@ -45,19 +45,22 @@ type testMissingField struct {
 }
 
 func TestScanStruct(t *testing.T) {
-	conn, err := pgx.Connect(connConfig)
+	conn, err := pgx.Connect(context.Background(), connString)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() {
+		err := conn.Close(context.Background())
+		assert.NoError(t, err)
+	}()
 
 	id1 := "scan-struct-1"
 	data1 := "foo bar"
 	time1 := time.Now()
 
-	_, err = conn.Exec("INSERT INTO test (id, some_data, created_at) VALUES ($1, $2, $3)", id1, data1, time1)
+	_, err = conn.Exec(context.Background(), "INSERT INTO test (id, some_data, created_at) VALUES ($1, $2, $3)", id1, data1, time1)
 	require.NoError(t, err)
 
 	var result testEntity
-	row := conn.QueryRow("SELECT * FROM test WHERE id = $1", id1)
+	row := conn.QueryRow(context.Background(), "SELECT * FROM test WHERE id = $1", id1)
 	err = ScanStruct(row, &result)
 	require.NoError(t, err)
 
@@ -77,16 +80,19 @@ func TestScanStruct(t *testing.T) {
 	assert.Equal(t, "nil pointer passed to ScanStruct destination", err.Error())
 
 	var resultMissingField testMissingField
-	row = conn.QueryRow("SELECT * FROM test WHERE id = $1", id1)
+	row = conn.QueryRow(context.Background(), "SELECT * FROM test WHERE id = $1", id1)
 	err = ScanStruct(row, &resultMissingField)
 	require.Error(t, err)
 	assert.Equal(t, "missing destination name some_data in *pgxhelpers.testMissingField", err.Error())
 }
 
 func TestScanStructs(t *testing.T) {
-	conn, err := pgx.Connect(connConfig)
+	conn, err := pgx.Connect(context.Background(), connString)
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() {
+		err := conn.Close(context.Background())
+		assert.NoError(t, err)
+	}()
 
 	id1 := "scan-structs-1"
 	data1 := "foo bar baz"
@@ -96,11 +102,11 @@ func TestScanStructs(t *testing.T) {
 	data2 := "foo bar baz qux"
 	time2 := time.Now().Add(time.Hour)
 
-	_, err = conn.Exec("INSERT INTO test (id, some_data, created_at) VALUES ($1, $2, $3), ($4, $5, $6)", id1, data1, time1, id2, data2, time2)
+	_, err = conn.Exec(context.Background(), "INSERT INTO test (id, some_data, created_at) VALUES ($1, $2, $3), ($4, $5, $6)", id1, data1, time1, id2, data2, time2)
 	require.NoError(t, err)
 
 	var result []*testEntity
-	rows, err := conn.Query("SELECT * FROM test WHERE id IN ($1, $2) ORDER BY id ASC", id1, id2)
+	rows, err := conn.Query(context.Background(), "SELECT * FROM test WHERE id IN ($1, $2) ORDER BY id ASC", id1, id2)
 	require.NoError(t, err)
 	defer rows.Close()
 
@@ -138,7 +144,7 @@ func TestScanStructs(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, "nil pointer returned to ScanStructs destination", err.Error())
 
-	rows, err = conn.Query("SELECT * FROM test WHERE id IN ($1, $2) ORDER BY id ASC", id1, id2)
+	rows, err = conn.Query(context.Background(), "SELECT * FROM test WHERE id IN ($1, $2) ORDER BY id ASC", id1, id2)
 	require.NoError(t, err)
 	defer rows.Close()
 
@@ -179,23 +185,15 @@ func initDockerDeps() (*dockertest.Pool, []*dockertest.Resource) {
 		}
 	}
 
-	portStr := pgResource.GetPort("5432/tcp")
-	port, err := strconv.ParseUint(portStr, 10, 16)
-	if err != nil {
-		log.Fatalf("Could not parse postgres port: %s [port: %s]", err, portStr)
-	}
-
-	connConfig = pgx.ConnConfig{
-		Host:     dockerHost,
-		Port:     uint16(port),
-		Database: "test",
-		User:     "test",
-		Password: "test",
-	}
+	connString = fmt.Sprintf(
+		"host=%s port=%s user=test password=test dbname=test sslmode=disable",
+		dockerHost,
+		pgResource.GetPort("5432/tcp"),
+	)
 
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
-		conn, err := pgx.Connect(connConfig)
+		conn, err := pgx.Connect(context.Background(), connString)
 		if err != nil {
 			return err
 		}
@@ -204,7 +202,7 @@ func initDockerDeps() (*dockertest.Pool, []*dockertest.Resource) {
 
 		return conn.Ping(ctx)
 	}); err != nil {
-		log.Fatalf("Could not connect to postgres docker: %s [source: %v]", err, connConfig)
+		log.Fatalf("Could not connect to postgres docker: %s [source: %s]", err, connString)
 	}
 
 	return pool, []*dockertest.Resource{pgResource}
@@ -219,13 +217,13 @@ func purgeDockerDeps(pool *dockertest.Pool, resources []*dockertest.Resource) {
 }
 
 func initDB() error {
-	conn, err := pgx.Connect(connConfig)
+	conn, err := pgx.Connect(context.Background(), connString)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer conn.Close(context.Background())
 
-	_, err = conn.Exec(`
+	_, err = conn.Exec(context.Background(), `
 CREATE TABLE "test"
 (
     id         text PRIMARY KEY,
