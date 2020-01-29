@@ -12,6 +12,7 @@ require (
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/google/go-cmp v0.4.0 // indirect
 	github.com/gotestyourself/gotestyourself v2.2.0+incompatible // indirect
+	github.com/jackc/pgconn v1.3.0
 	github.com/jackc/pgproto3/v2 v2.0.1
 	github.com/jackc/pgx/v4 v4.3.0
 	github.com/jmoiron/sqlx v1.2.0

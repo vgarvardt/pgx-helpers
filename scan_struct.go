@@ -1,17 +1,61 @@
 package pgxhelpers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
 	"strings"
+	"unsafe"
 
+	"github.com/jackc/pgconn"
 	"github.com/jackc/pgproto3/v2"
 	"github.com/jackc/pgx/v4"
 	"github.com/jmoiron/sqlx/reflectx"
 )
 
 var mapper = reflectx.NewMapperFunc("db", strings.ToLower)
+var rowsType reflect.Type
+
+func init() {
+	// XXX: hardcore unsafe part 1, just to make it work, not for production
+	// see part 2 below to see why I need all this
+
+	// all this unsafe black magic is required to get the instance of private *pgx.connRows for further usage
+	// to do this - need to initialise fake connection with the minimal set of fields set just to make it return
+	// instance of Rows
+
+	// pgConn is required in the connection to check connection status - we'll just set it to closed
+	pgConn := &pgconn.PgConn{}
+	pointerValPgConn := reflect.ValueOf(pgConn)
+	valPgConn := reflect.Indirect(pointerValPgConn)
+
+	fieldStatus := valPgConn.FieldByName("status")
+	ptrToStatus := unsafe.Pointer(fieldStatus.UnsafeAddr())
+	realPtrToStatus := (*byte)(ptrToStatus)
+	// connStatusClosed == 2
+	*realPtrToStatus = byte(2)
+
+	c := &pgx.Conn{}
+	pointerValConn := reflect.ValueOf(c)
+	valConn := reflect.Indirect(pointerValConn)
+
+	// connection checks some config values, so it should be set
+	fieldConfig := valConn.FieldByName("config")
+	ptrToConfig := unsafe.Pointer(fieldConfig.UnsafeAddr())
+	realPtrToConfig := (**pgx.ConnConfig)(ptrToConfig)
+	*realPtrToConfig = &pgx.ConnConfig{}
+
+	fieldPgConn := valConn.FieldByName("pgConn")
+	ptrToPgConn := unsafe.Pointer(fieldPgConn.UnsafeAddr())
+	realPtrToPgConn := (**pgconn.PgConn)(ptrToPgConn)
+	*realPtrToPgConn = pgConn
+
+	// we'll actually get an error as the connection is closed but we do not care - all we need is instance of rows
+	r, _ := c.Query(context.Background(), "")
+
+	rowsType = reflect.TypeOf(r).Elem()
+}
 
 // ScanStruct scans a pgx.Row into destination struct passed by reference based on the "db" fields tags
 func ScanStruct(r pgx.Row, dest interface{}) error {
@@ -23,14 +67,23 @@ func ScanStruct(r pgx.Row, dest interface{}) error {
 		return errors.New("nil pointer passed to ScanStruct destination")
 	}
 
-	// try to cheat with interface conversion as both pgx.Row and pgx.Rows are *pgx.connRows
-	// XXX: it does not work actually
-	rR, ok := r.(pgx.Rows)
-	if !ok {
-		return errors.New("could not assert pgx.Row as pgx.Rows")
+	// XXX: hardcore unsafe part 2, just to make it work, not for production
+	// now, as we have rows instance - we can reproduce Row.Scan(...) behaviour
+	// with the values prepared from struct fields
+	rows := reflect.NewAt(rowsType, unsafe.Pointer(reflect.ValueOf(r).Pointer())).Interface().(pgx.Rows)
+
+	if rows.Err() != nil {
+		return rows.Err()
 	}
 
-	fieldDescriptions := rR.(pgx.Rows).FieldDescriptions()
+	if !rows.Next() {
+		if rows.Err() == nil {
+			return pgx.ErrNoRows
+		}
+		return rows.Err()
+	}
+
+	fieldDescriptions := rows.FieldDescriptions()
 	columns := make([]string, len(fieldDescriptions), len(fieldDescriptions))
 	for i, fieldDescription := range fieldDescriptions {
 		columns[i] = string(fieldDescription.Name)
@@ -50,7 +103,9 @@ func ScanStruct(r pgx.Row, dest interface{}) error {
 	}
 
 	// scan into the struct field pointers and append to our results
-	return r.Scan(values...)
+	rows.Scan(values...)
+	rows.Close()
+	return rows.Err()
 }
 
 // ScanStructs scans a pgx.Rows into destination structs list passed by reference based on the "db" fields tags
