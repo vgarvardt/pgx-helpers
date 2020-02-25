@@ -6,47 +6,15 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/jackc/pgx"
+	"github.com/jackc/pgproto3/v2"
+	"github.com/jackc/pgx/v4"
 	"github.com/jmoiron/sqlx/reflectx"
 )
 
 var mapper = reflectx.NewMapperFunc("db", strings.ToLower)
 
-// ScanStruct scans a pgx.Row into destination struct passed by reference based on the "db" fields tags
-func ScanStruct(r *pgx.Row, dest interface{}) error {
-	v := reflect.ValueOf(dest)
-	if v.Kind() != reflect.Ptr {
-		return errors.New("must pass a pointer, not a value, to ScanStruct destination")
-	}
-	if v.IsNil() {
-		return errors.New("nil pointer passed to ScanStruct destination")
-	}
-
-	fieldDescriptions := (*pgx.Rows)(r).FieldDescriptions()
-	columns := make([]string, len(fieldDescriptions), len(fieldDescriptions))
-	for i, fieldDescription := range fieldDescriptions {
-		columns[i] = fieldDescription.Name
-	}
-
-	fields := mapper.TraversalsByName(v.Type(), columns)
-
-	// if we are not unsafe and are missing fields, return an error
-	if f, err := missingFields(fields); err != nil {
-		return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
-	}
-	values := make([]interface{}, len(columns))
-
-	err := fieldsByTraversal(v, fields, values)
-	if err != nil {
-		return err
-	}
-
-	// scan into the struct field pointers and append to our results
-	return r.Scan(values...)
-}
-
 // ScanStructs scans a pgx.Rows into destination structs list passed by reference based on the "db" fields tags
-func ScanStructs(r *pgx.Rows, newDest func() interface{}, appendResult func(r interface{})) error {
+func ScanStructs(r pgx.Rows, newDest func() interface{}, appendResult func(r interface{})) error {
 	dest := newDest()
 	v := reflect.ValueOf(dest)
 	if v.Kind() != reflect.Ptr {
@@ -56,20 +24,27 @@ func ScanStructs(r *pgx.Rows, newDest func() interface{}, appendResult func(r in
 		return errors.New("nil pointer returned to ScanStructs destination")
 	}
 
-	fieldDescriptions := r.FieldDescriptions()
-	columns := make([]string, len(fieldDescriptions), len(fieldDescriptions))
-	for i, fieldDescription := range fieldDescriptions {
-		columns[i] = fieldDescription.Name
-	}
-
-	fields := mapper.TraversalsByName(v.Type(), columns)
-
-	// if we are not unsafe and are missing fields, return an error
-	if f, err := missingFields(fields); err != nil {
-		return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
-	}
+	var (
+		fieldDescriptions []pgproto3.FieldDescription
+		columns           []string
+	)
 
 	for r.Next() {
+		if len(fieldDescriptions) == 0 {
+			fieldDescriptions = r.FieldDescriptions()
+			columns = make([]string, len(fieldDescriptions), len(fieldDescriptions))
+			for i, fieldDescription := range fieldDescriptions {
+				columns[i] = string(fieldDescription.Name)
+			}
+
+			fields := mapper.TraversalsByName(v.Type(), columns)
+
+			// if we are not unsafe and are missing fields, return an error
+			if f, err := missingFields(fields); err != nil {
+				return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
+			}
+		}
+
 		dest := newDest()
 		v = reflect.ValueOf(dest)
 
