@@ -44,48 +44,6 @@ type testMissingField struct {
 	CreatedAt time.Time `db:"created_at"`
 }
 
-func TestScanStruct(t *testing.T) {
-	conn, err := pgx.Connect(context.Background(), connString)
-	require.NoError(t, err)
-	defer func() {
-		err := conn.Close(context.Background())
-		assert.NoError(t, err)
-	}()
-
-	id1 := "scan-struct-1"
-	data1 := "foo bar"
-	time1 := time.Now()
-
-	_, err = conn.Exec(context.Background(), "INSERT INTO test (id, some_data, created_at) VALUES ($1, $2, $3)", id1, data1, time1)
-	require.NoError(t, err)
-
-	var result testEntity
-	row := conn.QueryRow(context.Background(), "SELECT * FROM test WHERE id = $1", id1)
-	err = ScanStruct(row, &result)
-	require.NoError(t, err)
-
-	assert.Equal(t, id1, result.ID)
-	assert.Equal(t, data1, result.SomeData)
-	// compare unit timestamp to avoid milliseconds diff
-	assert.Equal(t, time1.Unix(), result.CreatedAt.Unix())
-
-	// test some fail cases
-	err = ScanStruct(nil, result)
-	require.Error(t, err)
-	assert.Equal(t, "must pass a pointer, not a value, to ScanStruct destination", err.Error())
-
-	var isNil *testEntity
-	err = ScanStruct(nil, isNil)
-	require.Error(t, err)
-	assert.Equal(t, "nil pointer passed to ScanStruct destination", err.Error())
-
-	var resultMissingField testMissingField
-	row = conn.QueryRow(context.Background(), "SELECT * FROM test WHERE id = $1", id1)
-	err = ScanStruct(row, &resultMissingField)
-	require.Error(t, err)
-	assert.Equal(t, "missing destination name some_data in *pgxhelpers.testMissingField", err.Error())
-}
-
 func TestScanStructs(t *testing.T) {
 	conn, err := pgx.Connect(context.Background(), connString)
 	require.NoError(t, err)

@@ -13,46 +13,6 @@ import (
 
 var mapper = reflectx.NewMapperFunc("db", strings.ToLower)
 
-// ScanStruct scans a pgx.Row into destination struct passed by reference based on the "db" fields tags
-func ScanStruct(r pgx.Row, dest interface{}) error {
-	v := reflect.ValueOf(dest)
-	if v.Kind() != reflect.Ptr {
-		return errors.New("must pass a pointer, not a value, to ScanStruct destination")
-	}
-	if v.IsNil() {
-		return errors.New("nil pointer passed to ScanStruct destination")
-	}
-
-	// try to cheat with interface conversion as both pgx.Row and pgx.Rows are *pgx.connRows
-	// XXX: it does not work actually
-	rR, ok := r.(pgx.Rows)
-	if !ok {
-		return errors.New("could not assert pgx.Row as pgx.Rows")
-	}
-
-	fieldDescriptions := rR.(pgx.Rows).FieldDescriptions()
-	columns := make([]string, len(fieldDescriptions), len(fieldDescriptions))
-	for i, fieldDescription := range fieldDescriptions {
-		columns[i] = string(fieldDescription.Name)
-	}
-
-	fields := mapper.TraversalsByName(v.Type(), columns)
-
-	// if we are not unsafe and are missing fields, return an error
-	if f, err := missingFields(fields); err != nil {
-		return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
-	}
-	values := make([]interface{}, len(columns))
-
-	err := fieldsByTraversal(v, fields, values)
-	if err != nil {
-		return err
-	}
-
-	// scan into the struct field pointers and append to our results
-	return r.Scan(values...)
-}
-
 // ScanStructs scans a pgx.Rows into destination structs list passed by reference based on the "db" fields tags
 func ScanStructs(r pgx.Rows, newDest func() interface{}, appendResult func(r interface{})) error {
 	dest := newDest()
