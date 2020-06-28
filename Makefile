@@ -1,8 +1,10 @@
-verify:
-	@echo "===> Checking code formatting"
-	@go fmt $(go list ./... | grep -v /vendor/)
-	@echo "===> Linting"
-	@go list ./... | xargs -n 1 golint -set_exit_status
+lint:
+	@echo "$(OK_COLOR)==> Linting with golangci-lint$(NO_COLOR)"
+	@docker run --rm -v `pwd`:/app -w /app golangci/golangci-lint:v1.27.0 golangci-lint run -v
 
 test:
-	@CGO_ENABLED=0 go test -cover ./... -coverprofile=coverage.txt -covermode=atomic
+	@echo "$(OK_COLOR)==> Running tests using docker-compose deps$(NO_COLOR)"
+	@docker-compose up -d
+	@sleep 3 && \
+		TEST_POSTGRES="postgres://test:test@`docker-compose port postgres 5432`/test?sslmode=disable" \
+		go test -timeout 30s -cover -coverprofile=coverage.txt -covermode=atomic ./...

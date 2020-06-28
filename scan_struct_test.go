@@ -2,36 +2,14 @@ package pgxhelpers
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v4"
-	"github.com/ory/dockertest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-var connString string
-
-func TestMain(m *testing.M) {
-	pool, resources := initDockerDeps()
-
-	if err := initDB(); err != nil {
-		purgeDockerDeps(pool, resources)
-		log.Fatalf("Could not initialise DB: %s", err)
-	}
-
-	code := m.Run()
-
-	// os.Exit does not execute deferred calls so need to call purge explicitly
-	purgeDockerDeps(pool, resources)
-
-	os.Exit(code)
-}
 
 type testEntity struct {
 	ID        string    `db:"id"`
@@ -45,6 +23,10 @@ type testMissingField struct {
 }
 
 func TestScanStructs(t *testing.T) {
+	connString := os.Getenv("TEST_POSTGRES")
+
+	initDB(t, connString)
+
 	conn, err := pgx.Connect(context.Background(), connString)
 	require.NoError(t, err)
 	defer func() {
@@ -114,75 +96,19 @@ func TestScanStructs(t *testing.T) {
 	assert.Equal(t, "missing destination name some_data in *pgxhelpers.testMissingField", err.Error())
 }
 
-func initDockerDeps() (*dockertest.Pool, []*dockertest.Resource) {
-	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
-	pool, err := dockertest.NewPool("")
-	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
+func initDB(t *testing.T, connString string) {
+	t.Helper()
 
-	// pulls an image, creates a container based on it and runs it
-	pgResource, err := pool.Run("postgres", "11.5-alpine", []string{
-		"LC_ALL=C.UTF-8",
-		"POSTGRES_DB=test",
-		"POSTGRES_USER=test",
-		"POSTGRES_PASSWORD=test",
-	})
-	if err != nil {
-		log.Fatalf("Could not start postgres resource: %s", err)
-	}
-
-	dockerHost := "localhost"
-	if endpoint, ok := os.LookupEnv("DOCKER_HOST"); ok {
-		dockerHost = endpoint
-
-		// check if host has port and strip it
-		colon := strings.LastIndexByte(dockerHost, ':')
-		if colon != -1 {
-			dockerHost, _ = dockerHost[:colon], dockerHost[colon+1:]
-		}
-	}
-
-	connString = fmt.Sprintf(
-		"host=%s port=%s user=test password=test dbname=test sslmode=disable",
-		dockerHost,
-		pgResource.GetPort("5432/tcp"),
-	)
-
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		conn, err := pgx.Connect(context.Background(), connString)
-		if err != nil {
-			return err
-		}
-
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-
-		return conn.Ping(ctx)
-	}); err != nil {
-		log.Fatalf("Could not connect to postgres docker: %s [source: %s]", err, connString)
-	}
-
-	return pool, []*dockertest.Resource{pgResource}
-}
-
-func purgeDockerDeps(pool *dockertest.Pool, resources []*dockertest.Resource) {
-	for _, r := range resources {
-		if err := pool.Purge(r); err != nil {
-			log.Fatalf("Could not purge docker resource: %s", err)
-		}
-	}
-}
-
-func initDB() error {
 	conn, err := pgx.Connect(context.Background(), connString)
-	if err != nil {
-		return err
-	}
-	defer conn.Close(context.Background())
+	require.NoError(t, err)
+
+	defer func() {
+		err := conn.Close(context.Background())
+		assert.NoError(t, err)
+	}()
 
 	_, err = conn.Exec(context.Background(), `
-CREATE TABLE "test"
+CREATE TABLE IF NOT EXISTS "test"
 (
     id         text PRIMARY KEY,
     some_data  text        not null,
@@ -190,5 +116,5 @@ CREATE TABLE "test"
 );
 `)
 
-	return err
+	require.NoError(t, err)
 }
