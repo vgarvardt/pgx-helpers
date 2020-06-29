@@ -1,5 +1,10 @@
 # pgx-helpers
 
+[![GoDev](https://img.shields.io/static/v1?label=godev&message=reference&color=00add8)](https://pkg.go.dev/github.com/vgarvardt/pgx-helpers/v4)
+[![Coverage Status](https://codecov.io/gh/vgarvardt/pgx-helpers/branch/master/graph/badge.svg)](https://codecov.io/gh/vgarvardt/pgx-helpers)
+[![ReportCard](https://goreportcard.com/badge/github.com/vgarvardt/pgx-helpers)](https://goreportcard.com/report/github.com/vgarvardt/pgx-helpers)
+[![License](https://img.shields.io/npm/l/express.svg)](http://opensource.org/licenses/MIT)
+
 Various helpers for [`jackc/pgx`](https://github.com/jackc/pgx) PostgreSQL driver for Go.
 
 ## Versions
