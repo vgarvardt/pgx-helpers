@@ -12,20 +12,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
-        uses: actions/checkout@v2
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v1
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
         with:
-          version: v1.27
+          go-version-file: ./go.mod
+
+      - name: Lint Golang
+        uses: golangci/golangci-lint-action@v3
+        with:
+          only-new-issues: ${{ github.event_name == 'pull_request' }}
+          args: >
+            --config=./.github/linters/.golangci.yml
 
   test:
     name: Test
     runs-on: ubuntu-latest
-    needs: [lint]
+    needs: [ lint ]
 
     services:
       postgres:
-        image: postgres:11.5-alpine
+        image: postgres:11.21-alpine
         ports:
           - "5432"
         env:
@@ -39,10 +47,14 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v2
       - name: Check out code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: ./go.mod
+
       - name: Run tests
         if: success()
         run: go test -timeout 60s -cover ./... -coverprofile=coverage.txt -covermode=atomic
