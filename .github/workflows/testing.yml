@@ -29,7 +29,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    needs: [ lint ]
 
     services:
       postgres:

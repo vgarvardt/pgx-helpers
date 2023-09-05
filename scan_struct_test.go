@@ -152,7 +152,7 @@ func selectRows(t *testing.T, conn *pgx.Conn, id1, id2 string) pgx.Rows {
 func initDB(t *testing.T) string {
 	t.Helper()
 
-	//connString := "postgres://test:test@localhost:32771/test?sslmode=disable"
+	// connString := "postgres://test:test@localhost:32771/test?sslmode=disable"
 	connString := os.Getenv("TEST_POSTGRES")
 	require.NotEmpty(t, connString)
 
