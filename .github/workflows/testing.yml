@@ -61,8 +61,10 @@ jobs:
           TEST_POSTGRES: postgres://test:test@localhost:${{ job.services.postgres.ports[5432] }}/test?sslmode=disable
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
         if: success()
+        uses: codecov/codecov-action@v4
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           file: ./coverage.txt
           fail_ci_if_error: false
